@@ -27,13 +27,23 @@ async def on_ready():
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # 偵測使用者加入語音頻道
-    if before.channel is None and after.channel is not None:
-        channel = bot.get_channel(CHANNEL_ID)
-        if channel:
-            await channel.send(
-                f"🎧 **{member.display_name}** 加入了語音頻道 **{after.channel.name}**"
-            )
+    if member.bot:
+        return
+
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        return
+
+    if before.channel != after.channel:
+        if before.channel and after.channel:
+            # 移動語音頻道
+            await channel.send(f"🔀 **{member.display_name}** 從 **{before.channel.name}** 移動到 **{after.channel.name}**")
+        elif after.channel:
+            # 加入語音頻道
+            await channel.send(f"🎧 **{member.display_name}** 加入了語音頻道 **{after.channel.name}**")
+        elif before.channel:
+            # 離開語音頻道
+            await channel.send(f"👋 **{member.display_name}** 離開了語音頻道 **{before.channel.name}**")
 
 
 # 啟動保活伺服器

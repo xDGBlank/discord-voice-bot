@@ -110,7 +110,7 @@ async def on_voice_state_update(member, before, after):
                 await channel.send(f"👋 **{member.name}** 離開了語音頻道 **{before.channel.name}**")
 
 # --- 新增的戰績查詢指令 ---
-@bot.command(name="統計")
+@bot.command(name="排行")
 async def show_stats(ctx):
     stats = load_stats()
     if not stats:

@@ -39,22 +39,16 @@ async def on_voice_state_update(member, before, after):
     if before.channel != after.channel:
         if before.channel and after.channel:
             # --- 判斷：移動語音頻道 ---
-            await asyncio.sleep(3)  # 等待 3 秒，確保 Discord 來得及寫入日誌
+            await asyncio.sleep(1.5)  # 等待日誌生成
             executor = None
             try:
-                print(f"\n[DEBUG] --- 發生移動事件：{member.name} 從 {before.channel.name} 到 {after.channel.name} ---")
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_move, limit=5):
                     time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
-                    target_name = entry.target.name if entry.target else "未知"
-                    print(f"[DEBUG] 翻找日誌 -> 執行者: {entry.user.name}, 目標: {target_name}, 時間差: {time_diff:.1f}秒")
                     
-                    if entry.target and entry.target.id == member.id:
-                        if time_diff < 15:
-                            executor = entry.user
-                            print(f"[DEBUG] 成功配對！是 {executor.name} 拉的！")
-                            break
-            except discord.Forbidden:
-                print("[警告] 機器人缺少『檢視審計日誌』權限！")
+                    # 判斷條件：發生在 5 秒內，而且「目標頻道」對得上
+                    if time_diff < 5 and entry.extra and entry.extra.channel.id == after.channel.id:
+                        executor = entry.user
+                        break
             except Exception as e:
                 print(f"[錯誤] {e}")
 
@@ -69,22 +63,16 @@ async def on_voice_state_update(member, before, after):
 
         elif before.channel:
             # --- 判斷：離開/被中斷語音頻道 ---
-            await asyncio.sleep(3) # 等待 3 秒
+            await asyncio.sleep(1.5) # 等待日誌生成
             executor = None
             try:
-                print(f"\n[DEBUG] --- 發生離開事件：{member.name} 離開 {before.channel.name} ---")
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_disconnect, limit=5):
                     time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
-                    target_name = entry.target.name if entry.target else "未知"
-                    print(f"[DEBUG] 翻找日誌 -> 執行者: {entry.user.name}, 目標: {target_name}, 時間差: {time_diff:.1f}秒")
                     
-                    if entry.target and entry.target.id == member.id:
-                        if time_diff < 15:
-                            executor = entry.user
-                            print(f"[DEBUG] 成功配對！是 {executor.name} 踢的！")
-                            break
-            except discord.Forbidden:
-                print("[警告] 機器人缺少『檢視審計日誌』權限！")
+                    # 判斷條件：發生在 5 秒內 (因為沒頻道可以核對，只能比對時間)
+                    if time_diff < 5:
+                        executor = entry.user
+                        break
             except Exception as e:
                 print(f"[錯誤] {e}")
 

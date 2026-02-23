@@ -39,18 +39,24 @@ async def on_voice_state_update(member, before, after):
     if before.channel != after.channel:
         if before.channel and after.channel:
             # --- 判斷：移動語音頻道 ---
-            await asyncio.sleep(1.5)  # 增加等待時間，讓 Discord 有時間寫入日誌
+            await asyncio.sleep(3)  # 等待 3 秒，確保 Discord 來得及寫入日誌
             executor = None
             try:
-                # 擴大搜尋範圍到最近 5 筆，避免錯過
+                print(f"\n[DEBUG] --- 發生移動事件：{member.name} 從 {before.channel.name} 到 {after.channel.name} ---")
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_move, limit=5):
+                    time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
+                    target_name = entry.target.name if entry.target else "未知"
+                    print(f"[DEBUG] 翻找日誌 -> 執行者: {entry.user.name}, 目標: {target_name}, 時間差: {time_diff:.1f}秒")
+                    
                     if entry.target and entry.target.id == member.id:
-                        time_diff = discord.utils.utcnow() - entry.created_at
-                        if time_diff.total_seconds() < 10:  # 容錯時間放寬到 10 秒
+                        if time_diff < 15:
                             executor = entry.user
-                            break  # 找到了就跳出迴圈
+                            print(f"[DEBUG] 成功配對！是 {executor.name} 拉的！")
+                            break
             except discord.Forbidden:
                 print("[警告] 機器人缺少『檢視審計日誌』權限！")
+            except Exception as e:
+                print(f"[錯誤] {e}")
 
             if executor and executor.id != member.id:
                 await channel.send(f"🔀 **{executor.name}** 將 **{member.name}** 從 **{before.channel.name}** 移動到 **{after.channel.name}**")
@@ -63,18 +69,24 @@ async def on_voice_state_update(member, before, after):
 
         elif before.channel:
             # --- 判斷：離開/被中斷語音頻道 ---
-            await asyncio.sleep(1.5)  # 增加等待時間
+            await asyncio.sleep(3) # 等待 3 秒
             executor = None
             try:
-                # 擴大搜尋範圍到最近 5 筆
+                print(f"\n[DEBUG] --- 發生離開事件：{member.name} 離開 {before.channel.name} ---")
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_disconnect, limit=5):
+                    time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
+                    target_name = entry.target.name if entry.target else "未知"
+                    print(f"[DEBUG] 翻找日誌 -> 執行者: {entry.user.name}, 目標: {target_name}, 時間差: {time_diff:.1f}秒")
+                    
                     if entry.target and entry.target.id == member.id:
-                        time_diff = discord.utils.utcnow() - entry.created_at
-                        if time_diff.total_seconds() < 10:
+                        if time_diff < 15:
                             executor = entry.user
-                            break  # 找到了就跳出迴圈
+                            print(f"[DEBUG] 成功配對！是 {executor.name} 踢的！")
+                            break
             except discord.Forbidden:
                 print("[警告] 機器人缺少『檢視審計日誌』權限！")
+            except Exception as e:
+                print(f"[錯誤] {e}")
 
             if executor:
                 await channel.send(f"❌ **{executor.name}** 把 **{member.name}** 踢出了語音頻道 **{before.channel.name}**")

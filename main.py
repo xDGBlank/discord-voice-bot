@@ -1,8 +1,8 @@
 import discord
 from discord.ext import commands
 import os
-import asyncio  # 新增：為了使用稍微等待的功能
-from keep_alive import keep_alive  # 保活功能
+import asyncio
+from keep_alive import keep_alive
 
 # Debug 確認是否有載入環境變數
 print("[DEBUG] TEXT_CHANNEL_ID =", os.getenv("TEXT_CHANNEL_ID"))
@@ -16,6 +16,7 @@ intents = discord.Intents.default()
 intents.voice_states = True
 intents.guilds = True
 intents.members = True
+intents.message_content = True  # 解決缺少特權訊息內容意圖的警告
 
 # 建立 Bot 實例
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -38,13 +39,12 @@ async def on_voice_state_update(member, before, after):
     if before.channel != after.channel:
         if before.channel and after.channel:
             # --- 判斷：移動語音頻道 ---
-            await asyncio.sleep(0.5)  # 稍微等待審計日誌生成
+            await asyncio.sleep(0.5)
             executor = None
             try:
-                # 尋找「移動成員」的審計日誌
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_move, limit=1):
-                    if entry.target.id == member.id:
-                        # 確保這個動作發生在最近 5 秒內
+                    # 加入 entry.target 的防呆檢查
+                    if entry.target and entry.target.id == member.id:
                         time_diff = discord.utils.utcnow() - entry.created_at
                         if time_diff.total_seconds() < 5:
                             executor = entry.user
@@ -62,13 +62,12 @@ async def on_voice_state_update(member, before, after):
 
         elif before.channel:
             # --- 判斷：離開/被中斷語音頻道 ---
-            await asyncio.sleep(0.5)  # 稍微等待審計日誌生成
+            await asyncio.sleep(0.5)
             executor = None
             try:
-                # 尋找「中斷成員連線」的審計日誌
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_disconnect, limit=1):
-                    if entry.target.id == member.id:
-                        # 確保這個動作發生在最近 5 秒內
+                    # 加入 entry.target 的防呆檢查
+                    if entry.target and entry.target.id == member.id:
                         time_diff = discord.utils.utcnow() - entry.created_at
                         if time_diff.total_seconds() < 5:
                             executor = entry.user

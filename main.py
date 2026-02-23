@@ -39,15 +39,16 @@ async def on_voice_state_update(member, before, after):
     if before.channel != after.channel:
         if before.channel and after.channel:
             # --- 判斷：移動語音頻道 ---
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.5)  # 增加等待時間，讓 Discord 有時間寫入日誌
             executor = None
             try:
-                async for entry in guild.audit_logs(action=discord.AuditLogAction.member_move, limit=1):
-                    # 加入 entry.target 的防呆檢查
+                # 擴大搜尋範圍到最近 5 筆，避免錯過
+                async for entry in guild.audit_logs(action=discord.AuditLogAction.member_move, limit=5):
                     if entry.target and entry.target.id == member.id:
                         time_diff = discord.utils.utcnow() - entry.created_at
-                        if time_diff.total_seconds() < 5:
+                        if time_diff.total_seconds() < 10:  # 容錯時間放寬到 10 秒
                             executor = entry.user
+                            break  # 找到了就跳出迴圈
             except discord.Forbidden:
                 print("[警告] 機器人缺少『檢視審計日誌』權限！")
 
@@ -62,15 +63,16 @@ async def on_voice_state_update(member, before, after):
 
         elif before.channel:
             # --- 判斷：離開/被中斷語音頻道 ---
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.5)  # 增加等待時間
             executor = None
             try:
-                async for entry in guild.audit_logs(action=discord.AuditLogAction.member_disconnect, limit=1):
-                    # 加入 entry.target 的防呆檢查
+                # 擴大搜尋範圍到最近 5 筆
+                async for entry in guild.audit_logs(action=discord.AuditLogAction.member_disconnect, limit=5):
                     if entry.target and entry.target.id == member.id:
                         time_diff = discord.utils.utcnow() - entry.created_at
-                        if time_diff.total_seconds() < 5:
+                        if time_diff.total_seconds() < 10:
                             executor = entry.user
+                            break  # 找到了就跳出迴圈
             except discord.Forbidden:
                 print("[警告] 機器人缺少『檢視審計日誌』權限！")
 

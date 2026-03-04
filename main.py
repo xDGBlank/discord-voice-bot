@@ -51,7 +51,7 @@ async def on_message(message):
         return
 
     # 檢查是否包含禁詞
-    if "nmsl" in message.content.lower().replace(" ", ""):
+    if "nmsl" == message.content.lower().replace(" ", ""):
         try:
             # 設定禁言時間 (10 分鐘)
             duration = timedelta(minutes=10)

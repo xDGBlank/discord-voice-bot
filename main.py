@@ -93,7 +93,7 @@ async def slash_shut_up(interaction: discord.Interaction, member: discord.Member
 
     try:
         duration = timedelta(minutes=10)
-        await member.timeout(discord.utils.utcnow() + duration, reason="主人下令：太吵了")
+        await member.timeout(discord.utils.utcnow() + duration, reason="到底在吵三小")
         
         # 回覆你看得到的確認訊息
         await interaction.response.send_message(f"✅ 已成功讓 {member.name} 閉嘴。", ephemeral=True)

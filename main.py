@@ -3,6 +3,7 @@ from discord.ext import commands
 import os
 import asyncio
 import json
+from datetime import timedelta
 from keep_alive import keep_alive
 
 print("[DEBUG] TEXT_CHANNEL_ID =", os.getenv("TEXT_CHANNEL_ID"))
@@ -43,6 +44,34 @@ def update_stat(user_id, user_name, stat_type):
 async def on_ready():
     print(f"✅ Bot 上線：{bot.user}")
 
+# --- 嘲諷滿點版禁詞系統 ---
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # 檢查是否包含禁詞
+    if "nmsl" in message.content.lower().replace(" ", ""):
+        try:
+            # 設定禁言時間 (10 分鐘)
+            duration = timedelta(minutes=10)
+            
+            # 1. 先執行禁言 (讓他不能回嘴)
+            await message.author.timeout(discord.utils.utcnow() + duration, reason="可悲亂罵人")
+            
+            # 2. 機器人回覆你的指定語句
+            # 使用 reply 引用他的訊息，並 tag 他
+            await message.reply(f"**就繼續那麼沒素質吧 我們這裡是文明群組 請你離開**\n{message.author.mention}")
+            
+        except discord.Forbidden:
+            await message.channel.send("權限不足！那你繼續罵吧**")
+        except Exception as e:
+            print(f"[錯誤] {e}")
+        return
+
+    await bot.process_commands(message)
+# -------------------------------------
+
 @bot.event
 async def on_voice_state_update(member, before, after):
     if member.bot:
@@ -62,7 +91,6 @@ async def on_voice_state_update(member, before, after):
             try:
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_move, limit=5):
                     time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
-                    # 破解 Discord 合併日誌：時間放寬到 20 秒
                     if time_diff < 20 and entry.extra and entry.extra.channel.id == after.channel.id:
                         executor = entry.user
                         break
@@ -87,7 +115,6 @@ async def on_voice_state_update(member, before, after):
             try:
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_disconnect, limit=5):
                     time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
-                    # 破解 Discord 合併日誌：時間放寬到 20 秒
                     if time_diff < 20:
                         executor = entry.user
                         break
@@ -104,7 +131,7 @@ async def on_voice_state_update(member, before, after):
 async def show_stats(ctx):
     stats = load_stats()
     if not stats:
-        await ctx.send("目前還沒有任何戰績紀錄喔！大家快去語音頻道玩吧！")
+        await ctx.send("目前還沒有任何戰績紀錄喔！")
         return
     
     top_joins = sorted(stats.values(), key=lambda x: x["joins"], reverse=True)[:3]
@@ -117,8 +144,8 @@ async def show_stats(ctx):
     move_text = "\n".join([f"🥇 {u['name']}: {u['moves']} 次" for u in top_moves if u['moves'] > 0]) or "目前從缺"
     kick_text = "\n".join([f"🥇 {u['name']}: {u['kicks']} 次" for u in top_kicks if u['kicks'] > 0]) or "目前從缺"
 
-    embed.add_field(name="🎧 最常加入頻道 (駐站王)", value=join_text, inline=False)
-    embed.add_field(name="🔀 最愛當搬運工 (拖曳別人)", value=move_text, inline=False)
+    embed.add_field(name="🎧 最常加入頻道", value=join_text, inline=False)
+    embed.add_field(name="🔀 最愛當搬運工", value=move_text, inline=False)
     embed.add_field(name="❌ 最無情踢人", value=kick_text, inline=False)
 
     await ctx.send(embed=embed)

@@ -64,7 +64,7 @@ async def on_message(message):
             await message.reply(f"**就繼續那麼沒素質吧 我們這裡是文明群組 請你離開**\n{message.author.mention}")
             
         except discord.Forbidden:
-            await message.channel.send("權限不足！那你繼續罵吧**")
+            await message.channel.send("權限不足！那你繼續罵吧")
         except Exception as e:
             print(f"[錯誤] {e}")
         return

@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import os
 import asyncio
 import json
@@ -12,20 +13,31 @@ print("[DEBUG] TEXT_CHANNEL_ID =", os.getenv("TEXT_CHANNEL_ID"))
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("TEXT_CHANNEL_ID"))
 
-# --- 👑 這是你的專屬 ID ---
+# --- 👑 請確認這裡還是你的 ID ---
 OWNER_ID = 553845904424173600
-# ------------------------
+# -----------------------------
 
-# 設定權限 (Intents)
+# 設定權限
 intents = discord.Intents.default()
 intents.voice_states = True
 intents.guilds = True
 intents.members = True
 intents.message_content = True 
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+# 這裡我們同時保留 ! 指令，並啟用 app_commands (斜線指令)
+class MyBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
 
-# --- 戰績統計系統設定 ---
+    async def setup_hook(self):
+        # 這一步很重要：把斜線指令同步到 Discord 伺服器
+        # 為了讓指令馬上出現，我們這裡執行同步
+        await self.tree.sync()
+        print("✅ 斜線指令已同步完成！")
+
+bot = MyBot()
+
+# --- 戰績統計系統 ---
 STATS_FILE = "stats.json"
 
 def load_stats():
@@ -51,48 +63,89 @@ def update_stat(user_id, user_name, stat_type):
 async def on_ready():
     print(f"✅ Bot 上線：{bot.user}")
 
-# === 🤫 新增功能：閉嘴指令 (只有你能用) ===
-@bot.command(name="閉嘴")
-async def silent_mute(ctx, member: discord.Member):
-    # 1. 安全檢查：確認是不是「主人」下令的
-    if ctx.author.id != OWNER_ID:
-        return # 如果不是你，機器人直接無視
+# ==========================================
+# 🎮 全新：斜線指令區域 (Slash Commands)
+# ==========================================
 
-    # 2. 毀屍滅跡：立刻刪除你的指令訊息
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+# 1. /說：讓機器人幫你說話
+@bot.tree.command(name="說", description="(管理員指令) 讓機器人代替你發出訊息")
+@app_commands.describe(content="你想讓機器人說的話")
+async def slash_say(interaction: discord.Interaction, content: str):
+    # 檢查權限
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("🚫 你沒有權限使用此指令。", ephemeral=True)
+        return
 
-    # 3. 執行禁言：設定 10 分鐘
+    # 1. 先回覆你一個「只有你看得到的訊息」，證明指令收到
+    # 這就是截圖裡那個「只有您才能看到這個」的效果
+    await interaction.response.send_message(f"✅ 【訊息發送成功】\n內容：{content}", ephemeral=True)
+
+    # 2. 機器人在頻道公開說話
+    await interaction.channel.send(content)
+
+# 2. /閉嘴：禁言某人 10 分鐘
+@bot.tree.command(name="閉嘴", description="(管理員指令) 讓某人閉嘴 10 分鐘")
+@app_commands.describe(member="要閉嘴的對象")
+async def slash_shut_up(interaction: discord.Interaction, member: discord.Member):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("🚫 你沒有權限使用此指令。", ephemeral=True)
+        return
+
     try:
         duration = timedelta(minutes=10)
         await member.timeout(discord.utils.utcnow() + duration, reason="主人下令：太吵了")
         
-        # 4. 機器人代替你發言 (讓你看起來像個幕後黑手)
-        await ctx.send(f"🔇 **{member.mention}** 吵死了，給我閉嘴反省 10 分鐘！")
+        # 回覆你看得到的確認訊息
+        await interaction.response.send_message(f"✅ 已成功讓 {member.name} 閉嘴。", ephemeral=True)
+        
+        # 機器人公開嗆聲
+        await interaction.channel.send(f"🔇 **{member.mention}** 吵死了，給我閉嘴反省 10 分鐘！")
         
     except discord.Forbidden:
-        # 只有你看得到的悄悄話 (如果對方權限比機器人高)
-        await ctx.send("🔪 禁言失敗！我的權限不夠動他 (可能他是管理員)。", delete_after=5)
-# ==========================================
+        await interaction.response.send_message("❌ 權限不足，我無法禁言該使用者。", ephemeral=True)
 
-# === 🗣️ 功能：替身說話/回覆 (只有你能用) ===
-@bot.command(name="說")
-async def puppet_say(ctx, *, content):
-    if ctx.author.id != OWNER_ID:
+# 3. /暗殺：偷偷踢出語音
+@bot.tree.command(name="暗殺", description="(管理員指令) 偷偷把人踢出語音頻道")
+@app_commands.describe(member="暗殺對象")
+async def slash_assassinate(interaction: discord.Interaction, member: discord.Member):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("🚫 你沒有權限使用此指令。", ephemeral=True)
         return
 
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-
-    if ctx.message.reference:
-        ref_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-        await ref_msg.reply(content)
+    if member.voice:
+        try:
+            await member.move_to(None)
+            # 只有你看得到的成功訊息
+            await interaction.response.send_message(f"🔪 暗殺成功！已將 {member.name} 踢出語音。", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ 暗殺失敗，權限不足。", ephemeral=True)
     else:
-        await ctx.send(content)
+        await interaction.response.send_message("⚠️ 目標不在語音頻道內。", ephemeral=True)
+
+# 4. /統計：查詢戰績
+@bot.tree.command(name="統計", description="查看目前的語音戰績排行榜")
+async def slash_stats(interaction: discord.Interaction):
+    stats = load_stats()
+    if not stats:
+        await interaction.response.send_message("目前還沒有任何戰績紀錄喔！", ephemeral=False)
+        return
+    
+    top_joins = sorted(stats.values(), key=lambda x: x["joins"], reverse=True)[:3]
+    top_moves = sorted(stats.values(), key=lambda x: x["moves"], reverse=True)[:3]
+    top_kicks = sorted(stats.values(), key=lambda x: x["kicks"], reverse=True)[:3]
+
+    embed = discord.Embed(title="📊 群組語音戰績排行榜", color=discord.Color.gold())
+    
+    join_text = "\n".join([f"🥇 {u['name']}: {u['joins']} 次" for u in top_joins if u['joins'] > 0]) or "目前從缺"
+    move_text = "\n".join([f"🥇 {u['name']}: {u['moves']} 次" for u in top_moves if u['moves'] > 0]) or "目前從缺"
+    kick_text = "\n".join([f"🥇 {u['name']}: {u['kicks']} 次" for u in top_kicks if u['kicks'] > 0]) or "目前從缺"
+
+    embed.add_field(name="🎧 最常加入頻道", value=join_text, inline=False)
+    embed.add_field(name="🔀 最愛當搬運工", value=move_text, inline=False)
+    embed.add_field(name="❌ 最無情踢人", value=kick_text, inline=False)
+
+    await interaction.response.send_message(embed=embed)
+
 # ==========================================
 
 @bot.event
@@ -114,6 +167,7 @@ async def on_message(message):
             print(f"[錯誤] {e}")
         return
 
+    # 處理傳統指令 (如果有保留的話)
     await bot.process_commands(message)
 
 @bot.event
@@ -170,29 +224,6 @@ async def on_voice_state_update(member, before, after):
                 await channel.send(f"❌ **{executor.name}** 把 **{member.name}** 踢出了語音頻道 **{before.channel.name}**")
             else:
                 await channel.send(f"👋 **{member.name}** 離開了語音頻道 **{before.channel.name}**")
-
-@bot.command(name="統計")
-async def show_stats(ctx):
-    stats = load_stats()
-    if not stats:
-        await ctx.send("目前還沒有任何戰績紀錄喔！大家快去語音頻道玩吧！")
-        return
-    
-    top_joins = sorted(stats.values(), key=lambda x: x["joins"], reverse=True)[:3]
-    top_moves = sorted(stats.values(), key=lambda x: x["moves"], reverse=True)[:3]
-    top_kicks = sorted(stats.values(), key=lambda x: x["kicks"], reverse=True)[:3]
-
-    embed = discord.Embed(title="📊 群組語音戰績排行榜", color=discord.Color.gold())
-    
-    join_text = "\n".join([f"🥇 {u['name']}: {u['joins']} 次" for u in top_joins if u['joins'] > 0]) or "目前從缺"
-    move_text = "\n".join([f"🥇 {u['name']}: {u['moves']} 次" for u in top_moves if u['moves'] > 0]) or "目前從缺"
-    kick_text = "\n".join([f"🥇 {u['name']}: {u['kicks']} 次" for u in top_kicks if u['kicks'] > 0]) or "目前從缺"
-
-    embed.add_field(name="🎧 最常加入頻道 (駐站王)", value=join_text, inline=False)
-    embed.add_field(name="🔀 最愛當搬運工 (拖曳別人)", value=move_text, inline=False)
-    embed.add_field(name="❌ 最無情踢人", value=kick_text, inline=False)
-
-    await ctx.send(embed=embed)
 
 keep_alive()
 bot.run(TOKEN)

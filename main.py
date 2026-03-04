@@ -12,12 +12,16 @@ print("[DEBUG] TEXT_CHANNEL_ID =", os.getenv("TEXT_CHANNEL_ID"))
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("TEXT_CHANNEL_ID"))
 
+# --- 👑 這是你的專屬 ID ---
+OWNER_ID = 553845904424173600
+# ------------------------
+
 # 設定權限 (Intents)
 intents = discord.Intents.default()
 intents.voice_states = True
 intents.guilds = True
 intents.members = True
-intents.message_content = True  # 必須開啟，才能讀取 NMSL 禁詞
+intents.message_content = True 
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -25,66 +29,92 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 STATS_FILE = "stats.json"
 
 def load_stats():
-    """讀取統計資料"""
     if os.path.exists(STATS_FILE):
         with open(STATS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 def save_stats(stats):
-    """儲存統計資料"""
     with open(STATS_FILE, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=4, ensure_ascii=False)
 
 def update_stat(user_id, user_name, stat_type):
-    """更新某人的特定數值"""
     stats = load_stats()
     uid = str(user_id)
     if uid not in stats:
         stats[uid] = {"name": user_name, "joins": 0, "moves": 0, "kicks": 0}
-    
-    stats[uid]["name"] = user_name  # 更新名字
+    stats[uid]["name"] = user_name
     stats[uid][stat_type] += 1
     save_stats(stats)
-# --------------------
 
 @bot.event
 async def on_ready():
     print(f"✅ Bot 上線：{bot.user}")
 
-# --- NMSL 禁詞系統 (嚴格判定 + 忽略標點符號) ---
+# === 🤫 新增功能：閉嘴指令 (只有你能用) ===
+@bot.command(name="閉嘴")
+async def silent_mute(ctx, member: discord.Member):
+    # 1. 安全檢查：確認是不是「主人」下令的
+    if ctx.author.id != OWNER_ID:
+        return # 如果不是你，機器人直接無視
+
+    # 2. 毀屍滅跡：立刻刪除你的指令訊息
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+    # 3. 執行禁言：設定 10 分鐘
+    try:
+        duration = timedelta(minutes=10)
+        await member.timeout(discord.utils.utcnow() + duration, reason="主人下令：太吵了")
+        
+        # 4. 機器人代替你發言 (讓你看起來像個幕後黑手)
+        await ctx.send(f"🔇 **{member.mention}** 吵死了，給我閉嘴反省 10 分鐘！")
+        
+    except discord.Forbidden:
+        # 只有你看得到的悄悄話 (如果對方權限比機器人高)
+        await ctx.send("🔪 禁言失敗！我的權限不夠動他 (可能他是管理員)。", delete_after=5)
+# ==========================================
+
+# === 🗣️ 功能：替身說話/回覆 (只有你能用) ===
+@bot.command(name="說")
+async def puppet_say(ctx, *, content):
+    if ctx.author.id != OWNER_ID:
+        return
+
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+    if ctx.message.reference:
+        ref_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+        await ref_msg.reply(content)
+    else:
+        await ctx.send(content)
+# ==========================================
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # 1. 把訊息轉小寫
-    # 2. 只保留英文字母 (過濾掉標點符號、數字、空白、表情符號)
-    # 這樣 "N.M.S.L!!!", "nmsl...", " n m s l " 都會變成 "nmsl"
+    # NMSL 嚴格判定邏輯
     content = "".join(char for char in message.content.lower() if char.isalpha())
 
-    # 嚴格檢查：過濾後必須「完全等於」nmsl
-    # 這樣 "programs list" (變成 programslist) 就會安全通過
     if content == "nmsl":
         try:
-            # 設定禁言時間 (10 分鐘)
             duration = timedelta(minutes=10)
-            
-            # 1. 執行禁言
             await message.author.timeout(discord.utils.utcnow() + duration, reason="使用了禁詞 NMSL")
-            
-            # 2. 機器人回覆嘲諷 (保留原訊息不刪除)
-            await message.reply(f"**就繼續那麼沒素質吧 我們這裡是文明群組 請你離開**\n{message.author.mention}")
-            
+            await message.reply(f"**就繼續那麼沒素質吧**\n{message.author.mention}")
         except discord.Forbidden:
-            await message.channel.send("⚠️權限不足！那你繼續罵吧")
+            await message.channel.send("⚠️ 權限不足！請檢查我的身分組權限！")
         except Exception as e:
             print(f"[錯誤] {e}")
         return
 
-    # 讓其他的指令 (如 !統計) 能繼續運作
     await bot.process_commands(message)
-# -----------------------------------------------
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -97,18 +127,14 @@ async def on_voice_state_update(member, before, after):
 
     guild = member.guild
 
-    # 判斷狀態改變
     if before.channel != after.channel:
-        
-        # 情況 1：移動頻道 (原本有頻道 -> 後來也有頻道)
         if before.channel and after.channel:
-            await asyncio.sleep(1.5)  # 等待日誌生成
+            # 移動
+            await asyncio.sleep(1.5)
             executor = None
             try:
-                # 搜尋最近 5 筆「成員移動」紀錄
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_move, limit=5):
                     time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
-                    # 條件：發生在 20 秒內 (防止 Discord 合併日誌導致時間不更新) 且 目標頻道正確
                     if time_diff < 20 and entry.extra and entry.extra.channel.id == after.channel.id:
                         executor = entry.user
                         break
@@ -116,27 +142,23 @@ async def on_voice_state_update(member, before, after):
                 print(f"[錯誤] {e}")
 
             if executor and executor.id != member.id:
-                # 是被別人拉的 -> 幫兇手加分
                 update_stat(executor.id, executor.name, "moves")
                 await channel.send(f"🔀 **{executor.name}** 將 **{member.name}** 從 **{before.channel.name}** 移動到 **{after.channel.name}**")
             else:
-                # 是自己走的
                 await channel.send(f"🔀 **{member.name}** 從 **{before.channel.name}** 移動到 **{after.channel.name}**")
 
-        # 情況 2：加入頻道 (原本沒頻道 -> 後來有頻道)
         elif after.channel:
+            # 加入
             update_stat(member.id, member.name, "joins")
             await channel.send(f"🎧 **{member.name}** 加入了語音頻道 **{after.channel.name}**")
 
-        # 情況 3：離開/被踢出 (原本有頻道 -> 後來沒頻道)
         elif before.channel:
+            # 離開/踢出
             await asyncio.sleep(1.5)
             executor = None
             try:
-                # 搜尋最近 5 筆「成員中斷連線」紀錄
                 async for entry in guild.audit_logs(action=discord.AuditLogAction.member_disconnect, limit=5):
                     time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
-                    # 條件：發生在 20 秒內
                     if time_diff < 20:
                         executor = entry.user
                         break
@@ -144,14 +166,11 @@ async def on_voice_state_update(member, before, after):
                 print(f"[錯誤] {e}")
 
             if executor:
-                # 是被踢的 -> 幫兇手加分
                 update_stat(executor.id, executor.name, "kicks")
                 await channel.send(f"❌ **{executor.name}** 把 **{member.name}** 踢出了語音頻道 **{before.channel.name}**")
             else:
-                # 是自己離開的
                 await channel.send(f"👋 **{member.name}** 離開了語音頻道 **{before.channel.name}**")
 
-# --- !統計 指令 ---
 @bot.command(name="統計")
 async def show_stats(ctx):
     stats = load_stats()
@@ -159,7 +178,6 @@ async def show_stats(ctx):
         await ctx.send("目前還沒有任何戰績紀錄喔！大家快去語音頻道玩吧！")
         return
     
-    # 排序並取前 3 名
     top_joins = sorted(stats.values(), key=lambda x: x["joins"], reverse=True)[:3]
     top_moves = sorted(stats.values(), key=lambda x: x["moves"], reverse=True)[:3]
     top_kicks = sorted(stats.values(), key=lambda x: x["kicks"], reverse=True)[:3]
@@ -176,8 +194,5 @@ async def show_stats(ctx):
 
     await ctx.send(embed=embed)
 
-# 啟動保活伺服器 (給 Railway 用)
 keep_alive()
-
-# 啟動 Discord Bot
 bot.run(TOKEN)
